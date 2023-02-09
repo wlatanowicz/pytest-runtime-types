@@ -13,10 +13,10 @@ def is_instance(value, type_):
     if isinstance(type_, tuple):
         return any(is_instance(value, t) for t in type_)
 
-    if isinstance(type_, typing._UnionGenericAlias):
-        return _check_union_generic_alias(value, type_)
-
     if hasattr(type_, "__origin__"):
+        if type_.__origin__ == typing.Union:
+            return _check_union_generic_alias(value, type_)
+
         return _check_generic_alias(value, type_)
 
     try:

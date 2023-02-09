@@ -1,3 +1,4 @@
+import collections
 import inspect
 import warnings
 from dataclasses import dataclass
@@ -54,6 +55,7 @@ class ReturnTypeError(TypeMismatch):
     return_value: Any
     return_type: Type[Any]
     expected_type: Type[Any]
+    is_generator: bool = False
 
     def __hash__(self):
         return hash(
@@ -69,9 +71,13 @@ class ReturnTypeError(TypeMismatch):
         )
 
     def to_report(self):
+        return_type = self.return_type
+        if self.is_generator:
+            return_type = f"typing.Generator[{return_type}, _, _]"
+
         return f"""    Type mismatch in return:
         value: {self.return_value}
-        type: {self.return_type}
+        type: {return_type}
         expected type: {self.expected_type}
 """
 
@@ -103,7 +109,7 @@ class TypeCollector:
             friendly_func_name = f"{frame.f_locals['cls'].__name__}.{func_name}"
             return getattr(frame.f_locals["cls"], func_name), friendly_func_name
 
-        return None
+        return None, func_name
 
     def trace_func(self, frame, event, arg):
         if event in ("return", "call", "c_call"):
@@ -112,16 +118,14 @@ class TypeCollector:
                 return
             lineno = frame.f_back.f_lineno
 
-            called_func = self.get_function_from_frame(frame)
-            if not called_func:
+            function, func_name = self.get_function_from_frame(frame)
+            if not function:
                 warnings.warn(
                     RuntimeError(
-                        f"Cannot determine called function object in {filename}:{lineno}. This is probably a bug in pytest_runtime_types."
+                        f"Cannot determine called function object named `{func_name}` in {filename}:{lineno}. This is probably a bug in pytest_runtime_types."
                     )
                 )
                 return
-
-            function, func_name = called_func
 
             try:
                 annotations = inspect.get_annotations(function, eval_str=True)
@@ -171,10 +175,28 @@ class TypeCollector:
             if event == "return":
                 if "return" in annotations:
                     return_annotation = annotations["return"]
+                    return_annotation_origin = getattr(
+                        return_annotation, "__origin__", None.__class__
+                    )
+                    is_generator = False
+
                     if inspect.isgeneratorfunction(func):
-                        # @TODO check if annotation is Generator[x,y,z]
+                        is_generator = True
+
+                        if return_annotation_origin != collections.abc.Generator:
+                            yield ReturnTypeError(
+                                func_name,
+                                filename,
+                                lineno,
+                                ret_value,
+                                ret_value.__class__,
+                                annotations["return"],
+                                is_generator=is_generator,
+                            )
+                            continue
+
                         args = return_annotation.__args__
-                        if len(args) == 3:
+                        if len(args) != 3:
                             warnings.warn(
                                 RuntimeError(
                                     f"Invalid generator function annotation in {filename}:{lineno}."
@@ -186,7 +208,18 @@ class TypeCollector:
                             args[1] if len(args) >= 2 else Any,
                         ]
                     else:
-                        # @TODO check if annotation is NOT Generator[x,y,z]
+                        if return_annotation_origin == collections.abc.Generator:
+                            yield ReturnTypeError(
+                                func_name,
+                                filename,
+                                lineno,
+                                ret_value,
+                                ret_value.__class__,
+                                annotations["return"],
+                                is_generator=is_generator,
+                            )
+                            continue
+
                         return_type = return_annotation
 
                     if not is_instance(ret_value, return_type):
@@ -197,6 +230,7 @@ class TypeCollector:
                             ret_value,
                             ret_value.__class__,
                             annotations["return"],
+                            is_generator=is_generator,
                         )
 
     def raise_type_errors(self):
