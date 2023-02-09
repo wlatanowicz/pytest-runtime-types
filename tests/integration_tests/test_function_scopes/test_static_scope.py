@@ -9,14 +9,13 @@ class SomeClass:
         return f"{a} {b}"
 
 
-@pytest.mark.skip("Static methods are not supported yet")
 @pytest.mark.runtime_types
 def test_call_object_function():
     result = SomeClass.do_something(123, "abc")
     assert result == "123 abc"
 
 
-@pytest.mark.skip("Static methods are not supported yet")
+@pytest.mark.skip("Static methods are not supported.")
 @pytest.mark.xfail(strict=True, raises=pytest_runtime_types.fail.Exception)
 @pytest.mark.runtime_types
 def test_fail_call_object_function():
