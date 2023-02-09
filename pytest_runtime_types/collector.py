@@ -27,6 +27,19 @@ class ArgumentTypeError(TypeMismatch):
     argument_type: Type[Any]
     expected_type: Type[Any]
 
+    def __hash__(self):
+        return hash(
+            (
+                self.function_name,
+                self.file_name,
+                self.line_number,
+                self.argument_name,
+                str(self.argument_value),
+                str(self.argument_type),
+                str(self.expected_type),
+            )
+        )
+
     def to_report(self):
         return f"""    Type mismatch in argument:
         name: {self.argument_name}
@@ -41,6 +54,19 @@ class ReturnTypeError(TypeMismatch):
     return_value: Any
     return_type: Type[Any]
     expected_type: Type[Any]
+
+    def __hash__(self):
+        return hash(
+            (
+                self.function_name,
+                self.file_name,
+                self.line_number,
+                "return",
+                str(self.return_value),
+                str(self.return_type),
+                str(self.expected_type),
+            )
+        )
 
     def to_report(self):
         return f"""    Type mismatch in return:
@@ -58,8 +84,8 @@ class TypeCollector:
     def get_function_from_frame(self, frame):
         func_name = frame.f_code.co_name
 
-        if func_name in frame.f_locals:
-            return frame.f_locals[func_name], func_name
+        if frame.f_back and func_name in frame.f_back.f_locals:
+            return frame.f_back.f_locals[func_name], func_name
 
         if func_name in frame.f_globals:
             return frame.f_globals[func_name], func_name
